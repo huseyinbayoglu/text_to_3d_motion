@@ -1,1 +1,7 @@
 .env
+*.ipynb
+roadmap.md
+/venv
+.pyc
+diffusion_math.md
+model_training_design.md
