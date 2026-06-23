@@ -27,14 +27,20 @@ class GaussianDiffusion:
         mask = torch.ones(n, seq_len, dtype=torch.bool, device=device) # all the motion
         for ti in reversed(range(self.T)):
             t = torch.full((n,), ti, dtype=torch.long, device=device)
-            eps_theta = model(x, t, mask)               # (n, seq_len, feature_dim)
-            alpha_t     = self.alphas[ti].to(device)
-            alpha_bar_t = self.cum_alphas[ti].to(device)
-            beta_t      = self.betas[ti].to(device)
-            coef = (1 - alpha_t) / torch.sqrt(1 - alpha_bar_t)
-            mean = (x - coef * eps_theta) / torch.sqrt(alpha_t)
+            x0_hat = model(x, t, mask)                  # ARTIK x0 tahmini (eps degil)
+
+            alpha_t        = self.alphas[ti].to(device)
+            beta_t         = self.betas[ti].to(device)
+            alpha_bar_t    = self.cum_alphas[ti].to(device)
+            alpha_bar_prev = self.cum_alphas[ti - 1].to(device) if ti > 0 else torch.tensor(1.0, device=device)
+
+            # posterior q(x_{t-1} | x_t, x0_hat): mean = c0*x0_hat + ct*x_t  (stabil, bolme patlamasi yok)
+            c0 = torch.sqrt(alpha_bar_prev) * beta_t / (1 - alpha_bar_t)
+            ct = torch.sqrt(alpha_t) * (1 - alpha_bar_prev) / (1 - alpha_bar_t)
+            mean = c0 * x0_hat + ct * x
             if ti > 0:
-                x = mean + torch.sqrt(beta_t) * torch.randn_like(x)
+                var = (1 - alpha_bar_prev) / (1 - alpha_bar_t) * beta_t   # posterior varyans (beta_tilde)
+                x = mean + torch.sqrt(var) * torch.randn_like(x)
             else:
-                x = mean
+                x = mean                                # son adim: x = x0_hat
         return x
