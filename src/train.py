@@ -37,8 +37,13 @@ def main():
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=True)
     print(f"{len(ds)} motions")
 
+    # feature_dim'i veriden turet (Path A new_joints -> 63, Path B new_joint_vecs -> 251)
+    # args'a yaziyoruz ki checkpoint'e gitsin ve generate.py okuyabilsin
+    args.feature_dim = ds.motions[0].shape[-1]
+    print(f"feature_dim: {args.feature_dim}")
+
     # model
-    model = MotionDenoiser(feature_dim=63, d_model=args.d_model, nhead=args.nhead,
+    model = MotionDenoiser(feature_dim=args.feature_dim, d_model=args.d_model, nhead=args.nhead,
                             num_layers=args.num_layers, max_len=args.max_len).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"trainable params: {n_params/1e6:.2f}M")
