@@ -6,7 +6,7 @@ import torch
 import argparse 
 
 
-def parse_args():
+def parse_args(): 
     p = argparse.ArgumentParser()
     p.add_argument("--joints_dir", type=str, default="data/KIT-ML/new_joints")
     p.add_argument("--split_file", type=str, default="data/KIT-ML/train.txt")
