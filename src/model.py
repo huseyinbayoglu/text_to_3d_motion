@@ -61,9 +61,3 @@ class MotionDenoiser(nn.Module):
         out = self.output_proj(h)
         return out 
     
-B = 4
-x = torch.randn(B, 196, 63)
-t = torch.randint(0, 200, (B,))
-mask = torch.ones(B, 196, dtype=torch.bool)
-out = MotionDenoiser()(x, t, mask)
-print(out.shape)   # (4, 196, 63) bekliyoruz
