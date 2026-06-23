@@ -5,3 +5,4 @@ roadmap.md
 .pyc
 diffusion_math.md
 model_training_design.md
+transformer_denoiser_design.md
