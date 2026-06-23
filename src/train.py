@@ -85,5 +85,5 @@ def main():
     print("saved ->", args.save_path)
 
 
-    if __name__ == "__main__":
-        main()
+if __name__ == "__main__":
+    main()
