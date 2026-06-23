@@ -23,6 +23,7 @@ def parse_args():
                     default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--save_path", type=str, default="motion_denoiser.pt")
     p.add_argument("--log_every", type=int, default=1)
+    p.add_argument("--save_every", type=int, default=20)
     return p.parse_args()
 
 def main():
@@ -49,6 +50,7 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    losses = []
     # training
     model.train()
     for epoch in range(args.epochs):
@@ -74,15 +76,21 @@ def main():
 
             running += loss.item()
             n_batches += 1
-
+        epoch_loss = running / n_batches
+        losses.append(epoch_loss)
         if epoch % args.log_every == 0:
             print(f"epoch {epoch:3d} | loss {running / n_batches:.4f}")
+        if (epoch + 1) % args.save_every == 0 or epoch == args.epochs - 1:
+              torch.save({"model": model.state_dict(),
+                          "mean": ds.mean, "std": ds.std,
+                          "losses": losses,
+                          "args": vars(args)}, args.save_path)
 
     # save (mean/std dahil -> sampling'de denormalize icin sart)
-    torch.save({"model": model.state_dict(),
+    """torch.save({"model": model.state_dict(),
                 "mean": ds.mean, "std": ds.std,
                 "args": vars(args)}, args.save_path)
-    print("saved ->", args.save_path)
+    print("saved ->", args.save_path)"""
 
 
 if __name__ == "__main__":
