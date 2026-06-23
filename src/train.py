@@ -24,6 +24,7 @@ def parse_args():
     p.add_argument("--save_path", type=str, default="motion_denoiser.pt")
     p.add_argument("--log_every", type=int, default=1)
     p.add_argument("--save_every", type=int, default=20)
+    p.add_argument("--lambda_vel", type=float, default=1.0)   # velocity loss agirligi (statik-poz'a karsi)
     return p.parse_args()
 
 def main():
@@ -70,9 +71,17 @@ def main():
             x_t = diffusion.q_sample(motion, t, eps)       # forward: gurultu ekle (aynen)
             pred = model(x_t, t, mask)                     # ARTIK x0 tahmini (eps degil)
 
-            # maskeli loss: x0 tahminini gercek x0 (=motion) ile karsilastir (padding'i katma)
+            # 1) x0 loss (maskeli): x0 tahminini gercek x0 (=motion) ile karsilastir
             m = mask.unsqueeze(-1)                   # (B,T,1)
-            loss = ((pred - motion) ** 2 * m).sum() / (m.sum() * D)
+            loss_x0 = ((pred - motion) ** 2 * m).sum() / (m.sum() * D)
+
+            # 2) velocity loss: kare-arasi farki denetle -> statik-poz'u cezalandir (artikulasyon)
+            vel_pred = pred[:, 1:] - pred[:, :-1]                 # (B,T-1,D)
+            vel_gt   = motion[:, 1:] - motion[:, :-1]
+            mvel = (mask[:, 1:] & mask[:, :-1]).unsqueeze(-1)     # ardisik iki kare de gercek
+            loss_vel = ((vel_pred - vel_gt) ** 2 * mvel).sum() / (mvel.sum() * D)
+
+            loss = loss_x0 + args.lambda_vel * loss_vel
 
             optimizer.zero_grad()
             loss.backward()
