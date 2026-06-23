@@ -143,3 +143,37 @@ plt.scatter(samples[:, 0], samples[:, 1], s=3, alpha=0.5)
 plt.xlim(-3, 3); plt.ylim(-3, 3)
 plt.title("Generated samples")
 plt.show()
+
+def visualize_reverse_process(n):
+    pics = []
+    ts = [T,150,100,50,1]
+    model.eval()
+    x = torch.randn(n,2)
+    for ti in reversed(range(T)):
+        t = torch.full((n,), ti, dtype=torch.long)
+        eps_theta = model(x, t)                    
+
+        alpha_t     = alphas[ti]                  
+        alpha_bar_t = cum_alphas[ti]
+        beta_t      = betas[ti]
+
+        coef = (1 - alpha_t) / torch.sqrt(1 - alpha_bar_t)
+        mean = (x - coef * eps_theta) / torch.sqrt(alpha_t)
+
+        if ti > 0:
+            z = torch.randn_like(x)
+            x = mean + torch.sqrt(beta_t) * z     # add some noises 
+        else:
+            x = mean   
+        if ti in ts:
+            pics.append(x.detach().numpy())
+    return pics
+
+samples = visualize_reverse_process(2000)
+fig, axses = plt.subplots(1,len(samples),figsize=(16,9))
+axs = axses.flatten()
+for i, pic in enumerate(samples):
+    axs[i].scatter(pic[:, 0], pic[:, 1], s=3, alpha=0.5)
+    axs[i].set_xlim(-3, 3); axs[i].set_ylim(-3, 3)
+plt.title("Generated samples")
+plt.show()
