@@ -22,14 +22,15 @@ class GaussianDiffusion:
     @torch.no_grad()
     def sample(self, model, n, seq_len=196, feature_dim=63):
         model.eval()
-        x = torch.randn(n, seq_len, feature_dim)        
-        mask = torch.ones(n, seq_len, dtype=torch.bool) # all the motion
+        device = next(model.parameters()).device          # cihazi modelden al
+        x = torch.randn(n, seq_len, feature_dim, device=device)
+        mask = torch.ones(n, seq_len, dtype=torch.bool, device=device) # all the motion
         for ti in reversed(range(self.T)):
-            t = torch.full((n,), ti, dtype=torch.long)
+            t = torch.full((n,), ti, dtype=torch.long, device=device)
             eps_theta = model(x, t, mask)               # (n, seq_len, feature_dim)
-            alpha_t     = self.alphas[ti]
-            alpha_bar_t = self.cum_alphas[ti]
-            beta_t      = self.betas[ti]
+            alpha_t     = self.alphas[ti].to(device)
+            alpha_bar_t = self.cum_alphas[ti].to(device)
+            beta_t      = self.betas[ti].to(device)
             coef = (1 - alpha_t) / torch.sqrt(1 - alpha_bar_t)
             mean = (x - coef * eps_theta) / torch.sqrt(alpha_t)
             if ti > 0:
