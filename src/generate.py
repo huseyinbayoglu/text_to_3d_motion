@@ -64,7 +64,7 @@ def main():
     os.makedirs(args.out_dir, exist_ok=True)
 
     # 1) checkpoint yukle (CPU'ya)
-    ckpt = torch.load(args.ckpt, map_location="cpu")
+    ckpt = torch.load(args.ckpt, map_location="cpu", weights_only=False)  # ckpt'te numpy mean/std var
     margs = ckpt["args"]            # egitimdeki hiperparametreler
     mean  = ckpt["mean"]           # (63,)
     std   = ckpt["std"]            # (63,)
