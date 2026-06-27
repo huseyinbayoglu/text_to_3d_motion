@@ -36,12 +36,11 @@ def main():
     ds = TextToMotionDataset(args.joints_dir, args.split_file,
                             max_len=args.max_len, min_len=args.min_len)
     dl = DataLoader(ds, batch_size=args.batch_size, shuffle=True, drop_last=True)
-    print(f"{len(ds)} motions")
+    print(f"There is {len(ds)} trainable motions")
 
-    # feature_dim'i veriden turet (Path A new_joints -> 63, Path B new_joint_vecs -> 251)
-    # args'a yaziyoruz ki checkpoint'e gitsin ve generate.py okuyabilsin
+
     args.feature_dim = ds.motions[0].shape[-1]
-    print(f"feature_dim: {args.feature_dim}")
+    print(f"feature dimension: {args.feature_dim}")
 
     # model
     model = MotionDenoiser(feature_dim=args.feature_dim, d_model=args.d_model, nhead=args.nhead,
@@ -68,7 +67,7 @@ def main():
 
             t   = torch.randint(0, args.T, (B,), device=device)
             eps = torch.randn_like(motion)
-            x_t = diffusion.q_sample(motion, t, eps)       # forward: gurultu ekle (aynen)
+            x_t = diffusion.q_sample(motion, t, eps)       # forward
             pred = model(x_t, t, mask)                     # ARTIK x0 tahmini (eps degil)
 
             # 1) x0 loss (maskeli): x0 tahminini gercek x0 (=motion) ile karsilastir
