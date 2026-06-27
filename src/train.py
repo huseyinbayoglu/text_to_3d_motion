@@ -1,6 +1,7 @@
 from dataset import TextToMotionDataset
 from model import MotionDenoiser
 from diffusion import GaussianDiffusion
+from text_encoder import CLIPTextEncoder
 from torch.utils.data import DataLoader
 import torch
 import argparse
@@ -25,6 +26,7 @@ def parse_args():
     p.add_argument("--log_every", type=int, default=1)
     p.add_argument("--save_every", type=int, default=20)
     p.add_argument("--lambda_vel", type=float, default=1.0)   # velocity loss agirligi (statik-poz'a karsi)
+    p.add_argument("--cfg_prob", type=float, default=0.1)     # CFG: text'i null'a dusurme olasiligi
     return p.parse_args()
 
 def main():
@@ -42,9 +44,14 @@ def main():
     args.feature_dim = ds.motions[0].shape[-1]
     print(f"feature dimension: {args.feature_dim}")
 
+    # text encoder (donmus CLIP) — caption -> (B,512)
+    text_encoder = CLIPTextEncoder(device=device)
+    print(f"clip text dim: {text_encoder.dim}")
+
     # model
     model = MotionDenoiser(feature_dim=args.feature_dim, d_model=args.d_model, nhead=args.nhead,
-                            num_layers=args.num_layers, max_len=args.max_len).to(device)
+                            num_layers=args.num_layers, max_len=args.max_len,
+                            text_dim=text_encoder.dim).to(device)
     n_params = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"trainable params: {n_params/1e6:.2f}M")
 
@@ -60,15 +67,19 @@ def main():
     model.train()
     for epoch in range(args.epochs):
         running, n_batches = 0.0, 0
-        for motion, mask in dl:
+        for motion, mask, caption in dl:
             motion = motion.to(device)              # (B,T,feature_dim) = temiz x0
             mask   = mask.to(device)                # (B,T)
             B, T, D = motion.shape
 
+            # caption -> CLIP ozelligi (gradyan yok); CFG dropout maskesi
+            text_emb = text_encoder.encode(list(caption))           # (B,512)
+            drop = torch.rand(B, device=device) < args.cfg_prob     # (B,) True=null kullan
+
             t   = torch.randint(0, args.T, (B,), device=device)
             eps = torch.randn_like(motion)
             x_t = diffusion.q_sample(motion, t, eps)       # forward
-            pred = model(x_t, t, mask)                     # ARTIK x0 tahmini (eps degil)
+            pred = model(x_t, t, mask, text_emb, drop)     # x0 tahmini (text-kosullu)
 
             # 1) x0 loss (maskeli): x0 tahminini gercek x0 (=motion) ile karsilastir
             m = mask.unsqueeze(-1)                   # (B,T,1)
