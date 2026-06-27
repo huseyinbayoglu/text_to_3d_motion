@@ -15,6 +15,7 @@ from mpl_toolkits.mplot3d import Axes3D     # noqa: F401  (3d projection icin ge
 
 from model import MotionDenoiser
 from diffusion import GaussianDiffusion
+from text_encoder import CLIPTextEncoder
 
 # KIT iskelet baglanti semasi (HumanML3D repo: paramUtil.kit_kinematic_chain)
 KIT_CHAIN = [[0, 11, 12, 13, 14, 15],
@@ -107,6 +108,8 @@ def parse_args():
     p.add_argument("--joints_num", type=int, default=21)   # KIT: 21
     p.add_argument("--device", type=str,
                    default="cuda" if torch.cuda.is_available() else "cpu")
+    p.add_argument("--prompt", type=str, default=None)     # None -> kosulsuz uretim
+    p.add_argument("--guidance", type=float, default=2.5)  # CFG gucu (w)
     return p.parse_args()
 
 
@@ -121,18 +124,29 @@ def main():
     std   = ckpt["std"]
     feature_dim = margs.get("feature_dim", 63)         # eski Path A ckpt'lerde yok -> 63
 
-    # 2) modeli AYNI mimariyle kur + agirliklari yukle
+    # 2) text encoder + prompt'u encode et (verilmisse)
+    text_encoder = CLIPTextEncoder(device=args.device)
+    if args.prompt is not None:
+        text_emb = text_encoder.encode([args.prompt])          # (1,512)
+        text_emb = text_emb.expand(args.n, -1)                 # (n,512) ayni prompt, farkli gurultu
+        print(f"prompt: {args.prompt!r} | guidance: {args.guidance}")
+    else:
+        text_emb = None                                        # kosulsuz
+
+    # 3) modeli AYNI mimariyle kur + agirliklari yukle
     model = MotionDenoiser(feature_dim=feature_dim,
                            d_model=margs["d_model"],
                            nhead=margs["nhead"],
                            num_layers=margs["num_layers"],
-                           max_len=margs["max_len"])
+                           max_len=margs["max_len"],
+                           text_dim=text_encoder.dim)
     model.load_state_dict(ckpt["model"])
     model.to(args.device).eval()
 
-    # 3) diffusion + uret -> (n, seq_len, feature_dim) normalize edilmis
+    # 4) diffusion + uret -> (n, seq_len, feature_dim) normalize edilmis
     diffusion = GaussianDiffusion(T=margs["T"])
-    samples = diffusion.sample(model, n=args.n, seq_len=args.seq_len, feature_dim=feature_dim)
+    samples = diffusion.sample(model, n=args.n, seq_len=args.seq_len, feature_dim=feature_dim,
+                               text_emb=text_emb, guidance=args.guidance)
 
     # 4) DENORMALIZE (sart!)
     denorm = samples.cpu().numpy() * std + mean        # (n, seq_len, feature_dim)

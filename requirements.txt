@@ -1,0 +1,9 @@
+torch
+numpy
+matplotlib
+scikit-learn
+# CLIP text encoder (OpenAI) — PyPI'daki "clip" DEGIL, repo'dan kurulur:
+#   pip install git+https://github.com/openai/CLIP.git
+git+https://github.com/openai/CLIP.git
+ftfy
+regex

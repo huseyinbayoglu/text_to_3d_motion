@@ -20,14 +20,21 @@ class GaussianDiffusion:
         return sqrt_ab * x_0 + sqrt_om * eps
     
     @torch.no_grad()
-    def sample(self, model, n, seq_len=196, feature_dim=63):
+    def sample(self, model, n, seq_len=196, feature_dim=63, text_emb=None, guidance=2.5):
         model.eval()
         device = next(model.parameters()).device          # cihazi modelden al
         x = torch.randn(n, seq_len, feature_dim, device=device)
         mask = torch.ones(n, seq_len, dtype=torch.bool, device=device) # all the motion
         for ti in reversed(range(self.T)):
             t = torch.full((n,), ti, dtype=torch.long, device=device)
-            x0_hat = model(x, t, mask)                  # ARTIK x0 tahmini (eps degil)
+
+            # --- classifier-free guidance ---
+            if text_emb is None:                        # kosulsuz uretim
+                x0_hat = model(x, t, mask)
+            else:                                       # cond + uncond -> blend
+                x0_cond   = model(x, t, mask, text_emb)        # text'li
+                x0_uncond = model(x, t, mask, None)            # null (text yok)
+                x0_hat = x0_uncond + guidance * (x0_cond - x0_uncond)
 
             alpha_t        = self.alphas[ti].to(device)
             beta_t         = self.betas[ti].to(device)
