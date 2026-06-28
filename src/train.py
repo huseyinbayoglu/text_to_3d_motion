@@ -27,6 +27,7 @@ def parse_args():
     p.add_argument("--save_every", type=int, default=20)
     p.add_argument("--lambda_vel", type=float, default=1.0)   # velocity loss agirligi (statik-poz'a karsi)
     p.add_argument("--cfg_prob", type=float, default=0.1)     # CFG: text'i null'a dusurme olasiligi
+    p.add_argument("--amp", action="store_true")              # mixed precision (fp16) — A100'de ~2x hiz
     return p.parse_args()
 
 def main():
@@ -62,6 +63,11 @@ def main():
 
     optimizer = torch.optim.Adam(model.parameters(), lr=args.lr)
 
+    # mixed precision (sadece cuda'da anlamli); fp16 + GradScaler
+    use_amp = args.amp and device.type == "cuda"
+    scaler = torch.amp.GradScaler("cuda", enabled=use_amp)
+    print(f"amp (mixed precision): {use_amp}")
+
     losses = []
     # training
     model.train()
@@ -79,23 +85,26 @@ def main():
             t   = torch.randint(0, args.T, (B,), device=device)
             eps = torch.randn_like(motion)
             x_t = diffusion.q_sample(motion, t, eps)       # forward
-            pred = model(x_t, t, mask, text_emb, drop)     # x0 tahmini (text-kosullu)
 
-            # 1) x0 loss (maskeli): x0 tahminini gercek x0 (=motion) ile karsilastir
-            m = mask.unsqueeze(-1)                   # (B,T,1)
-            loss_x0 = ((pred - motion) ** 2 * m).sum() / (m.sum() * D)
+            with torch.autocast(device_type="cuda", dtype=torch.float16, enabled=use_amp):
+                pred = model(x_t, t, mask, text_emb, drop)     # x0 tahmini (text-kosullu)
 
-            # 2) velocity loss: kare-arasi farki denetle -> statik-poz'u cezalandir (artikulasyon)
-            vel_pred = pred[:, 1:] - pred[:, :-1]                 # (B,T-1,D)
-            vel_gt   = motion[:, 1:] - motion[:, :-1]
-            mvel = (mask[:, 1:] & mask[:, :-1]).unsqueeze(-1)     # ardisik iki kare de gercek
-            loss_vel = ((vel_pred - vel_gt) ** 2 * mvel).sum() / (mvel.sum() * D)
+                # 1) x0 loss (maskeli): x0 tahminini gercek x0 (=motion) ile karsilastir
+                m = mask.unsqueeze(-1)                   # (B,T,1)
+                loss_x0 = ((pred - motion) ** 2 * m).sum() / (m.sum() * D)
 
-            loss = loss_x0 + args.lambda_vel * loss_vel
+                # 2) velocity loss: kare-arasi farki denetle -> statik-poz'u cezalandir (artikulasyon)
+                vel_pred = pred[:, 1:] - pred[:, :-1]                 # (B,T-1,D)
+                vel_gt   = motion[:, 1:] - motion[:, :-1]
+                mvel = (mask[:, 1:] & mask[:, :-1]).unsqueeze(-1)     # ardisik iki kare de gercek
+                loss_vel = ((vel_pred - vel_gt) ** 2 * mvel).sum() / (mvel.sum() * D)
+
+                loss = loss_x0 + args.lambda_vel * loss_vel
 
             optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
+            scaler.scale(loss).backward()      # AMP: loss'u olcekle (fp16 underflow'a karsi)
+            scaler.step(optimizer)
+            scaler.update()
 
             running += loss.item()
             n_batches += 1
