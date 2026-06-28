@@ -5,6 +5,7 @@ Path A (63 = ham pozisyon) ve Path B (251 = vektor temsil) ile calisir.
 """
 import argparse
 import os
+import json
 import numpy as np
 import torch
 import matplotlib
@@ -121,6 +122,8 @@ def parse_args():
                    default="cuda" if torch.cuda.is_available() else "cpu")
     p.add_argument("--prompt", type=str, default=None)     # None -> kosulsuz uretim
     p.add_argument("--guidance", type=float, default=2.5)  # CFG gucu (w)
+    p.add_argument("--export_json", action="store_true")   # three.js icin pozisyonlari JSON yaz
+    p.add_argument("--fps", type=int, default=20)          # animasyon fps (gif + json)
     return p.parse_args()
 
 
@@ -168,12 +171,25 @@ def main():
     else:                                              # Path B: 251 -> recover_from_ric
         positions = recover_from_ric(torch.from_numpy(denorm).float(), args.joints_num).numpy()
 
-    # 6) render
+    # 6) render (+ opsiyonel JSON export)
     chain = chain_for(args.joints_num)                 # 22 -> HumanML3D, degilse KIT
     for i in range(args.n):
         out_path = os.path.join(args.out_dir, f"sample_{i}.gif")
-        render_motion(positions[i], out_path, chain=chain)
+        render_motion(positions[i], out_path, fps=args.fps, chain=chain)
         print("saved ->", out_path)
+
+        if args.export_json:                           # three.js icin: pozisyonlar (y-up) + kemik semasi
+            data = {
+                "prompt": args.prompt,
+                "fps": args.fps,
+                "joints_num": args.joints_num,
+                "chain": chain,                        # her biri eklem-indeksleri zinciri (kemikler)
+                "frames": np.round(positions[i], 4).tolist(),  # (T, J, 3) [x, y(up), z]
+            }
+            json_path = os.path.join(args.out_dir, f"sample_{i}.json")
+            with open(json_path, "w") as f:
+                json.dump(data, f)
+            print("saved ->", json_path)
 
 
 if __name__ == "__main__":
