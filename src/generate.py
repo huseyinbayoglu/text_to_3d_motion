@@ -24,6 +24,17 @@ KIT_CHAIN = [[0, 11, 12, 13, 14, 15],
              [3, 5, 6, 7],
              [3, 8, 9, 10]]
 
+# HumanML3D (SMPL tabanli) 22-eklem zinciri (paramUtil.t2m_kinematic_chain)
+T2M_CHAIN = [[0, 2, 5, 8, 11],
+             [0, 1, 4, 7, 10],
+             [0, 3, 6, 9, 12, 15],
+             [9, 14, 17, 19, 21],
+             [9, 13, 16, 18, 20]]
+
+
+def chain_for(joints_num):
+    return T2M_CHAIN if joints_num == 22 else KIT_CHAIN
+
 
 # ---------------- 251-dim -> (J,3) pozisyon cozumu (HumanML3D kanonik) ----------------
 def qinv(q):
@@ -76,8 +87,8 @@ def recover_from_ric(data, joints_num):
     return positions
 
 
-def render_motion(motion, out_path, fps=20):
-    """motion: (T, 21, 3) numpy -> iskelet animasyonu gif olarak kaydet."""
+def render_motion(motion, out_path, fps=20, chain=KIT_CHAIN):
+    """motion: (T, J, 3) numpy -> iskelet animasyonu gif olarak kaydet."""
     F = motion.shape[0]
     x, depth, up = motion[..., 0], motion[..., 2], motion[..., 1]
     xlim = (x.min(), x.max()); ylim = (depth.min(), depth.max()); zlim = (up.min(), up.max())
@@ -91,8 +102,8 @@ def render_motion(motion, out_path, fps=20):
         ax.set_title(f"frame {f}/{F}")
         fr = motion[f]                                  # (21, 3)
         ax.scatter(fr[:, 0], fr[:, 2], fr[:, 1], s=20)  # (x, derinlik, yukari)
-        for chain in KIT_CHAIN:
-            ax.plot(fr[chain, 0], fr[chain, 2], fr[chain, 1], linewidth=2)
+        for limb in chain:
+            ax.plot(fr[limb, 0], fr[limb, 2], fr[limb, 1], linewidth=2)
 
     ani = animation.FuncAnimation(fig, draw, frames=F, interval=1000 / fps)
     ani.save(out_path, writer="pillow", fps=fps)
@@ -158,9 +169,10 @@ def main():
         positions = recover_from_ric(torch.from_numpy(denorm).float(), args.joints_num).numpy()
 
     # 6) render
+    chain = chain_for(args.joints_num)                 # 22 -> HumanML3D, degilse KIT
     for i in range(args.n):
         out_path = os.path.join(args.out_dir, f"sample_{i}.gif")
-        render_motion(positions[i], out_path)
+        render_motion(positions[i], out_path, chain=chain)
         print("saved ->", out_path)
 
 
