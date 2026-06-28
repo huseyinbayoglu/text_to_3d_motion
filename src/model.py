@@ -58,7 +58,7 @@ class MotionDenoiser(nn.Module):
         B = x_t.shape[0]
 
         h = self.input_proj(x_t)            # (B,T,d)
-        h = h + self.pos_enc                # frame positional encoding (kosul token'ina EKLENMEZ)
+        h = h + self.pos_enc[:x_t.shape[1]]  # frame PE (T<=max_len icin dilimle; kosul token'ina EKLENMEZ)
 
         t_emb = self.time_mlp(self.timestep_embedding(t))   # (B,d)  diffusion-t
 
