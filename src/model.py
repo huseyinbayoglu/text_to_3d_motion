@@ -9,7 +9,7 @@ class MotionDenoiser(nn.Module):
         self.input_proj = nn.Linear(feature_dim,d_model)
         self.output_proj = nn.Linear(d_model,feature_dim)
 
-        # --- text kosullandirma (CLIP cikisini d_model'e tasi) ---
+        # --- CLIP output to moel
         self.text_proj = nn.Linear(text_dim, d_model)
         # CFG icin "bos text" temsili (ogrenilen vektor); text dusurulen orneklerde kullanilir
         self.null_cond = nn.Parameter(torch.zeros(d_model))

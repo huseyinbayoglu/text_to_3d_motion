@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Text-to-Motion Viewer</title>
+<style>
+  :root { --fg:#e8e8ee; --panel:rgba(20,20,28,.72); }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; background:#0d0d12; color:var(--fg);
+              font-family:-apple-system,Segoe UI,Roboto,sans-serif; overflow:hidden; }
+  #app { position:fixed; inset:0; }
+  #hud { position:fixed; left:16px; bottom:16px; right:16px; display:flex; gap:12px;
+         align-items:center; padding:10px 14px; background:var(--panel);
+         backdrop-filter:blur(10px); border:1px solid rgba(255,255,255,.08);
+         border-radius:14px; user-select:none; }
+  #hud button { background:#2a2a3a; color:var(--fg); border:1px solid rgba(255,255,255,.12);
+                border-radius:9px; padding:7px 14px; cursor:pointer; font-size:14px; }
+  #hud button:hover { background:#34344a; }
+  #slider { flex:1; }
+  #title { position:fixed; left:18px; top:16px; font-size:15px; font-weight:600;
+           padding:8px 14px; background:var(--panel); border-radius:12px;
+           border:1px solid rgba(255,255,255,.08); max-width:60vw; }
+  label.file { cursor:pointer; }
+  label.file input { display:none; }
+  .muted { opacity:.65; font-size:13px; min-width:90px; text-align:right; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="title">loading…</div>
+<div id="hud">
+  <button id="play">⏸ Pause</button>
+  <input id="slider" type="range" min="0" max="100" value="0" step="1" />
+  <span id="frameLbl" class="muted">0 / 0</span>
+  <button id="speed">1.0×</button>
+  <button id="loadBtn">Load JSON</button>
+  <input id="fileInput" type="file" accept="application/json" style="display:none" />
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+}}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// ---------- renderer / scene / camera ----------
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias:true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;   // sinematik ton
+renderer.toneMappingExposure = 1.05;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0d0d12);
+const pmrem = new THREE.PMREMGenerator(renderer);
+scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;  // PBR yansima (HDRI'siz)
+
+const camera = new THREE.PerspectiveCamera(45, innerWidth/innerHeight, 0.01, 1000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+
+// ---------- lights ----------
+scene.add(new THREE.HemisphereLight(0xbcd0ff, 0x202028, 0.6));
+const key = new THREE.DirectionalLight(0xffffff, 2.4);
+key.position.set(4, 8, 5); key.castShadow = true;
+key.shadow.mapSize.set(2048, 2048);
+key.shadow.bias = -0.0002;
+const sc = key.shadow.camera; sc.near = 0.5; sc.far = 60; sc.left=-12; sc.right=12; sc.top=12; sc.bottom=-12;
+scene.add(key);
+const rim = new THREE.DirectionalLight(0x88aaff, 0.8); rim.position.set(-6, 4, -6); scene.add(rim);
+
+// ---------- ground (contact shadow) ----------
+let ground;
+function makeGround(radius, y) {
+  if (ground) scene.remove(ground);
+  const g = new THREE.Group();
+  const disc = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 64),
+    new THREE.MeshStandardMaterial({ color:0x15151c, roughness:0.85, metalness:0.0 }));
+  disc.rotation.x = -Math.PI/2; disc.receiveShadow = true;
+  const shadow = new THREE.Mesh(
+    new THREE.CircleGeometry(radius, 64),
+    new THREE.ShadowMaterial({ opacity:0.35 }));
+  shadow.rotation.x = -Math.PI/2; shadow.position.y = 0.001; shadow.receiveShadow = true;
+  const grid = new THREE.GridHelper(radius*2, 24, 0x333344, 0x22222c);
+  grid.material.opacity = 0.25; grid.material.transparent = true;
+  g.add(disc, shadow, grid); g.position.y = y;
+  scene.add(g); ground = g;
+}
+
+// ---------- skeleton ----------
+const jointMat = new THREE.MeshStandardMaterial({ color:0x46e0ff, emissive:0x0a3540, roughness:0.35, metalness:0.1 });
+const boneMat  = new THREE.MeshStandardMaterial({ color:0xeaeaf2, roughness:0.4, metalness:0.15 });
+const UP = new THREE.Vector3(0,1,0);
+
+let motion = null;     // { fps, joints_num, chain, frames:[T][J][3], prompt }
+let bones = [];        // [[a,b],...]
+let jointMeshes = [], boneMeshes = [];
+let trail = null;
+let frameIdx = 0, playing = true, speed = 1.0, lastT = performance.now(), acc = 0;
+
+function clearSkeleton() {
+  for (const m of jointMeshes) scene.remove(m);
+  for (const m of boneMeshes) scene.remove(m);
+  if (trail) scene.remove(trail);
+  jointMeshes = []; boneMeshes = []; trail = null;
+}
+
+function buildSkeleton() {
+  clearSkeleton();
+  const J = motion.joints_num;
+  // chain -> bone pairs
+  bones = [];
+  for (const ch of motion.chain) for (let i=0;i<ch.length-1;i++) bones.push([ch[i], ch[i+1]]);
+
+  // karakteristik uzunluk (olcek-bagimsiz boyutlandirma)
+  const f0 = motion.frames[0];
+  let avgBL = 0;
+  for (const [a,b] of bones) {
+    const dx=f0[a][0]-f0[b][0], dy=f0[a][1]-f0[b][1], dz=f0[a][2]-f0[b][2];
+    avgBL += Math.hypot(dx,dy,dz);
+  }
+  avgBL = (avgBL / bones.length) || 1;
+  const jR = avgBL*0.13, bR = avgBL*0.07;
+
+  const sphere = new THREE.SphereGeometry(jR, 20, 20);
+  for (let i=0;i<J;i++) {
+    const m = new THREE.Mesh(sphere, jointMat); m.castShadow = true; scene.add(m); jointMeshes.push(m);
+  }
+  const cyl = new THREE.CylinderGeometry(bR, bR, 1, 14);  // y boyunca; scale.y = kemik uzunlugu
+  for (let k=0;k<bones.length;k++) {
+    const m = new THREE.Mesh(cyl, boneMat); m.castShadow = true; scene.add(m); boneMeshes.push(m);
+  }
+  // root hareket-izi (joint 0)
+  trail = new THREE.Line(new THREE.BufferGeometry(),
+            new THREE.LineBasicMaterial({ color:0xffae3b, transparent:true, opacity:0.8 }));
+  scene.add(trail);
+
+  fitCameraAndGround();
+}
+
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3(), _d = new THREE.Vector3();
+function applyFrame(fi) {
+  const fr = motion.frames[fi];
+  for (let i=0;i<jointMeshes.length;i++) jointMeshes[i].position.set(fr[i][0], fr[i][1], fr[i][2]);
+  for (let k=0;k<bones.length;k++) {
+    const [a,b] = bones[k];
+    _a.set(fr[a][0],fr[a][1],fr[a][2]); _b.set(fr[b][0],fr[b][1],fr[b][2]);
+    _c.copy(_a).add(_b).multiplyScalar(0.5);
+    _d.copy(_b).sub(_a); const len = _d.length();
+    const bm = boneMeshes[k];
+    bm.position.copy(_c);
+    bm.scale.set(1, Math.max(len,1e-5), 1);
+    bm.quaternion.setFromUnitVectors(UP, _d.normalize());
+  }
+  // izi guncelle (0..fi arasi root)
+  const pts = [];
+  for (let f=0; f<=fi; f++) pts.push(new THREE.Vector3(motion.frames[f][0][0], 0.002, motion.frames[f][0][2]));
+  trail.geometry.setFromPoints(pts);
+}
+
+function fitCameraAndGround() {
+  const box = new THREE.Box3();
+  const v = new THREE.Vector3();
+  for (const fr of motion.frames) for (const p of fr) { v.set(p[0],p[1],p[2]); box.expandByPoint(v); }
+  const size = new THREE.Vector3(); box.getSize(size);
+  const center = new THREE.Vector3(); box.getCenter(center);
+  const radius = Math.max(size.x, size.z) * 0.65 + 1.0;
+  makeGround(radius, box.min.y);
+  const diag = size.length();
+  controls.target.set(center.x, box.min.y + size.y*0.5, center.z);
+  camera.position.set(center.x + diag*0.9, box.min.y + size.y*0.9 + diag*0.3, center.z + diag*1.1);
+  camera.near = diag/100; camera.far = diag*20 + 100; camera.updateProjectionMatrix();
+  controls.update();
+}
+
+// ---------- postprocessing (bloom) ----------
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.35, 0.5, 0.85); // hafif
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+
+// ---------- UI ----------
+const playBtn = document.getElementById('play');
+const slider = document.getElementById('slider');
+const frameLbl = document.getElementById('frameLbl');
+const speedBtn = document.getElementById('speed');
+const titleEl = document.getElementById('title');
+playBtn.onclick = () => { playing = !playing; playBtn.textContent = playing ? '⏸ Pause' : '▶ Play'; };
+slider.oninput = () => { frameIdx = +slider.value; playing = false; playBtn.textContent='▶ Play'; applyFrame(frameIdx); updateLbl(); };
+const speeds = [0.25,0.5,1.0,1.5,2.0]; let si = 2;
+speedBtn.onclick = () => { si=(si+1)%speeds.length; speed=speeds[si]; speedBtn.textContent=speed.toFixed(2)+'×'; };
+const fileInput = document.getElementById('fileInput');
+document.getElementById('loadBtn').onclick = () => fileInput.click();   // butona basinca dosya secici ac
+fileInput.onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader(); r.onload = () => loadMotion(JSON.parse(r.result)); r.readAsText(f);
+};
+function updateLbl(){ frameLbl.textContent = `${frameIdx} / ${motion.frames.length-1}`; slider.value = frameIdx; }
+
+function loadMotion(data) {
+  motion = data;
+  titleEl.textContent = data.prompt ? `“${data.prompt}”` : 'motion';
+  slider.max = data.frames.length - 1;
+  frameIdx = 0; playing = true; playBtn.textContent='⏸ Pause';
+  buildSkeleton(); applyFrame(0); updateLbl();
+}
+
+// ---------- loop ----------
+function tick(now) {
+  requestAnimationFrame(tick);
+  const dt = (now - lastT)/1000; lastT = now;
+  if (motion && playing) {
+    acc += dt * speed * motion.fps;
+    while (acc >= 1) { acc -= 1; frameIdx = (frameIdx + 1) % motion.frames.length; }
+    applyFrame(frameIdx); updateLbl();
+  }
+  controls.update();
+  composer.render();
+}
+requestAnimationFrame(tick);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); composer.setSize(innerWidth, innerHeight);
+});
+
+// ---------- Gradio/iframe kopru: parent'tan motion gelince otomatik yukle ----------
+addEventListener('message', (e) => { if (e && e.data && e.data.motion) loadMotion(e.data.motion); });
+
+// ---------- ilk yukleme: sample_0.json (yoksa dosya sec / prompt bekle) ----------
+fetch('sample_0.json').then(r => { if(!r.ok) throw 0; return r.json(); })
+  .then(loadMotion)
+  .catch(() => { titleEl.textContent = 'Prompt gir ve Generate’e bas (ya da Load JSON)'; });
+</script>
+</body>
+</html>
