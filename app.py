@@ -36,8 +36,11 @@ def run(prompt, guidance, seq_len):
 
 
 with gr.Blocks(title="Text to 3D Human Motion") as demo:
-    gr.Markdown("## Text to 3D Human Motion (diffusion, from scratch)\n"
-                "Bir prompt yaz, **Generate**'e bas  model üretip aşağıdaki sahnede 3B oynatır.")
+    gr.Markdown(
+        "## Text-to-3D Human Motion\n"
+        "Sıfırdan eğitilmiş bir diffusion modeli. İngilizce bir prompt yaz ve **Generate**'e bas; "
+        "üretilen hareket aşağıdaki 3B sahnede oynar."
+    )
     with gr.Row():
         prompt = gr.Textbox(label="Prompt (English)", scale=4,
                             value="a person walks in a circle")
