@@ -28,8 +28,8 @@ IFRAME = (
 
 # parent -> iframe veri kopru (uretilen JSON'u viewer'a postMessage ile yolla)
 PUSH_JS = "(j)=>{console.log('PUSH fired, len', (j||'').length); try{var d=(typeof j==='string')?JSON.parse(j):j;document.getElementById('mviewer').contentWindow.postMessage({motion:d},'*');}catch(e){console.error('push hata',e);}}"
-# Generate'e basinca viewer'da yukleme halkasini ac
-LOAD_JS = "()=>{document.getElementById('mviewer').contentWindow.postMessage({loading:true},'*');}"
+# Generate'e basinca viewer'da yukleme halkasini ac (js fn'den ONCE calisir -> girdileri aynen geri dondur)
+LOAD_JS = "(...a)=>{document.getElementById('mviewer').contentWindow.postMessage({loading:true},'*'); return a;}"
 
 CSS = "footer{display:none !important}"
 
@@ -64,10 +64,9 @@ with gr.Blocks(title="Text to 3D Human Motion", css=CSS) as demo:
     out = gr.Textbox(visible=False)        # JSON tasiyici (gizli)
     gr.HTML(IFRAME)                         # gomulu three.js viewer
 
-    btn.click(None, None, None, js=LOAD_JS) \
-       .then(run, [prompt, guidance, seq_len, steps], out)
-    # PUSH'u out.change'e bagla (birincil event -> js daha guvenilir tetiklenir)
-    out.change(None, out, None, js=PUSH_JS)
+    # tek click: js (spinner) fn'den once -> run -> .then ile PUSH (run gercek fn oldugu icin .then tetiklenir)
+    btn.click(run, [prompt, guidance, seq_len, steps], out, js=LOAD_JS) \
+       .then(None, out, None, js=PUSH_JS)
 
 
 if __name__ == "__main__":
