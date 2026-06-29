@@ -28,6 +28,10 @@ IFRAME = (
 
 # parent -> iframe veri kopru (uretilen JSON'u viewer'a postMessage ile yolla)
 PUSH_JS = "(j)=>{document.getElementById('mviewer').contentWindow.postMessage({motion:JSON.parse(j)},'*'); return [];}"
+# Generate'e basinca viewer'da yukleme halkasini ac
+LOAD_JS = "()=>{document.getElementById('mviewer').contentWindow.postMessage({loading:true},'*');}"
+
+CSS = "footer{display:none !important}"
 
 
 def run(prompt, guidance, seq_len):
@@ -35,7 +39,7 @@ def run(prompt, guidance, seq_len):
     return json.dumps(data)
 
 
-with gr.Blocks(title="Text to 3D Human Motion") as demo:
+with gr.Blocks(title="Text to 3D Human Motion", css=CSS) as demo:
     gr.Markdown(
         "## Text-to-3D Human Motion\n"
         "Sıfırdan eğitilmiş bir diffusion modeli. İngilizce bir prompt yaz ve **Generate**'e bas; "
@@ -50,13 +54,16 @@ with gr.Blocks(title="Text to 3D Human Motion") as demo:
         seq_len = gr.Slider(40, 196, value=120, step=4, label="Length (frames)")
     gr.Examples(
         ["a person walks forward", "a person walks in a circle", "a person runs",
-         "a person jumps", "a person sits down", "a person waves"],
+         "a person jumps", "a person sits down", "a person waves","a person kicks something",
+         "a person fights with someone"],
         inputs=prompt)
     out = gr.Textbox(visible=False)        # JSON tasiyici (gizli)
     gr.HTML(IFRAME)                         # gomulu three.js viewer
 
-    btn.click(run, [prompt, guidance, seq_len], out).then(None, out, None, js=PUSH_JS)
+    btn.click(None, None, None, js=LOAD_JS) \
+       .then(run, [prompt, guidance, seq_len], out) \
+       .then(None, out, None, js=PUSH_JS)
 
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+    demo.launch(share=True, show_api=False)
