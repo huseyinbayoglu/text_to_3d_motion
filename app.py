@@ -27,7 +27,7 @@ IFRAME = (
 )
 
 # parent -> iframe veri kopru (uretilen JSON'u viewer'a postMessage ile yolla)
-PUSH_JS = "(j)=>{document.getElementById('mviewer').contentWindow.postMessage({motion:JSON.parse(j)},'*'); return [];}"
+PUSH_JS = "(j)=>{try{var d=(typeof j==='string')?JSON.parse(j):j;document.getElementById('mviewer').contentWindow.postMessage({motion:d},'*');}catch(e){console.error('push hata',e);}}"
 # Generate'e basinca viewer'da yukleme halkasini ac
 LOAD_JS = "()=>{document.getElementById('mviewer').contentWindow.postMessage({loading:true},'*');}"
 
