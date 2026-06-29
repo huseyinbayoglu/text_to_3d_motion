@@ -36,14 +36,14 @@ def run(prompt, guidance, seq_len):
 
 
 with gr.Blocks(title="Text to 3D Human Motion") as demo:
-    gr.Markdown("## Text → 3D Human Motion (diffusion, from scratch)\n"
-                "Bir prompt yaz, **Generate**'e bas — model uretip asagidaki 3B sahnede oynatir.")
+    gr.Markdown("## Text to 3D Human Motion (diffusion, from scratch)\n"
+                "Bir prompt yaz, **Generate**'e bas  model üretip aşağıdaki sahnede 3B oynatır.")
     with gr.Row():
         prompt = gr.Textbox(label="Prompt (English)", scale=4,
                             value="a person walks in a circle")
         btn = gr.Button("Generate", variant="primary", scale=1)
     with gr.Row():
-        guidance = gr.Slider(1.0, 5.0, value=2.5, step=0.5, label="Guidance (CFG)")
+        guidance = gr.Slider(1.0, 5.0, value=2.5, step=0.5, label="Guidance (hareket prompta ne kadar sadık kalsın)")
         seq_len = gr.Slider(40, 196, value=120, step=4, label="Length (frames)")
     gr.Examples(
         ["a person walks forward", "a person walks in a circle", "a person runs",
