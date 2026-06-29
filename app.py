@@ -27,7 +27,7 @@ IFRAME = (
 )
 
 # parent -> iframe veri kopru (uretilen JSON'u viewer'a postMessage ile yolla)
-PUSH_JS = "(j)=>{try{var d=(typeof j==='string')?JSON.parse(j):j;document.getElementById('mviewer').contentWindow.postMessage({motion:d},'*');}catch(e){console.error('push hata',e);}}"
+PUSH_JS = "(j)=>{console.log('PUSH fired, len', (j||'').length); try{var d=(typeof j==='string')?JSON.parse(j):j;document.getElementById('mviewer').contentWindow.postMessage({motion:d},'*');}catch(e){console.error('push hata',e);}}"
 # Generate'e basinca viewer'da yukleme halkasini ac
 LOAD_JS = "()=>{document.getElementById('mviewer').contentWindow.postMessage({loading:true},'*');}"
 
@@ -35,8 +35,10 @@ CSS = "footer{display:none !important}"
 
 
 def run(prompt, guidance, seq_len, steps):
+    print("generating:", repr(prompt), "| steps", steps, flush=True)
     data = gen.generate(prompt.strip(), seq_len=int(seq_len),
                         guidance=float(guidance), ddim_steps=int(steps))
+    print("done | frames:", len(data["frames"]), flush=True)
     return json.dumps(data)
 
 
@@ -63,8 +65,9 @@ with gr.Blocks(title="Text to 3D Human Motion", css=CSS) as demo:
     gr.HTML(IFRAME)                         # gomulu three.js viewer
 
     btn.click(None, None, None, js=LOAD_JS) \
-       .then(run, [prompt, guidance, seq_len, steps], out) \
-       .then(None, out, None, js=PUSH_JS)
+       .then(run, [prompt, guidance, seq_len, steps], out)
+    # PUSH'u out.change'e bagla (birincil event -> js daha guvenilir tetiklenir)
+    out.change(None, out, None, js=PUSH_JS)
 
 
 if __name__ == "__main__":
