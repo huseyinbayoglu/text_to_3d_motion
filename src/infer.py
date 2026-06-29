@@ -34,14 +34,21 @@ class MotionGenerator:
             setattr(self.diffusion, a, getattr(self.diffusion, a).to(self.device))
 
     @torch.no_grad()
-    def generate(self, prompt, seq_len=120, guidance=2.5, joints_num=22, fps=20):
-        """prompt -> three.js JSON dict (tek motion)."""
+    def generate(self, prompt, seq_len=120, guidance=2.5, joints_num=22, fps=20, ddim_steps=50):
+        """prompt -> three.js JSON dict (tek motion).
+        ddim_steps>0 -> hizli DDIM (~1 sn); 0 -> tam DDPM (1000 adim, yavas ama referans)."""
         text_emb = None
         if prompt:
             text_emb = self.text_encoder.encode([prompt])          # (1,512)
-        samples = self.diffusion.sample(self.model, n=1, seq_len=seq_len,
-                                        feature_dim=self.feature_dim,
-                                        text_emb=text_emb, guidance=guidance)
+        if ddim_steps and ddim_steps > 0:
+            samples = self.diffusion.ddim_sample(self.model, n=1, seq_len=seq_len,
+                                                 feature_dim=self.feature_dim,
+                                                 text_emb=text_emb, guidance=guidance,
+                                                 steps=int(ddim_steps))
+        else:
+            samples = self.diffusion.sample(self.model, n=1, seq_len=seq_len,
+                                            feature_dim=self.feature_dim,
+                                            text_emb=text_emb, guidance=guidance)
         denorm = samples.cpu().numpy() * self.std + self.mean       # (1,T,D)
         if self.feature_dim == 63:                                  # Path A: ham pozisyon
             positions = denorm.reshape(1, seq_len, joints_num, 3)

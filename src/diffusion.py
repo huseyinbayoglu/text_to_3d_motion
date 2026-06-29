@@ -51,3 +51,43 @@ class GaussianDiffusion:
             else:
                 x = mean                                # son adim: x = x0_hat
         return x
+
+    @torch.no_grad()
+    def ddim_sample(self, model, n, seq_len=196, feature_dim=63,
+                    text_emb=None, guidance=2.5, steps=50, eta=0.0):
+        """Hizli sampling: T=1000 yerine 'steps' adim atlar. x0-prediction -> eps turetilir.
+        eta=0 -> deterministik DDIM. ~50 adim 1000-adim DDPM'e cok yakin, ~20x hizli."""
+        model.eval()
+        device = next(model.parameters()).device
+        x = torch.randn(n, seq_len, feature_dim, device=device)
+        mask = torch.ones(n, seq_len, dtype=torch.bool, device=device)
+
+        # zaman alt-dizisi: T-1 ... 0 arasi 'steps' nokta (azalan)
+        ts = torch.linspace(self.T - 1, 0, steps, device=device).round().long().tolist()
+        for i, ti in enumerate(ts):
+            t = torch.full((n,), ti, dtype=torch.long, device=device)
+
+            # --- classifier-free guidance (sample ile ayni) ---
+            if text_emb is None:
+                x0_hat = model(x, t, mask)
+            else:
+                x0_cond   = model(x, t, mask, text_emb)
+                x0_uncond = model(x, t, mask, None)
+                x0_hat = x0_uncond + guidance * (x0_cond - x0_uncond)
+
+            abar_t = self.cum_alphas[ti].to(device)
+            # eps'i tahmin edilen x0'dan turet
+            eps = (x - torch.sqrt(abar_t) * x0_hat) / torch.sqrt(1 - abar_t)
+
+            if i < len(ts) - 1:
+                abar_prev = self.cum_alphas[ts[i + 1]].to(device)
+            else:
+                abar_prev = torch.tensor(1.0, device=device)             # son adim -> temiz x0
+
+            # DDIM guncelleme (eta=0 deterministik)
+            sigma = eta * torch.sqrt((1 - abar_prev) / (1 - abar_t)) * torch.sqrt(1 - abar_t / abar_prev)
+            dir_xt = torch.sqrt(torch.clamp(1 - abar_prev - sigma ** 2, min=0.0)) * eps
+            x = torch.sqrt(abar_prev) * x0_hat + dir_xt
+            if eta > 0 and i < len(ts) - 1:
+                x = x + sigma * torch.randn_like(x)
+        return x

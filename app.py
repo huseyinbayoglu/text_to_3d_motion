@@ -34,8 +34,9 @@ LOAD_JS = "()=>{document.getElementById('mviewer').contentWindow.postMessage({lo
 CSS = "footer{display:none !important}"
 
 
-def run(prompt, guidance, seq_len):
-    data = gen.generate(prompt.strip(), seq_len=int(seq_len), guidance=float(guidance))
+def run(prompt, guidance, seq_len, steps):
+    data = gen.generate(prompt.strip(), seq_len=int(seq_len),
+                        guidance=float(guidance), ddim_steps=int(steps))
     return json.dumps(data)
 
 
@@ -52,6 +53,7 @@ with gr.Blocks(title="Text to 3D Human Motion", css=CSS) as demo:
     with gr.Row():
         guidance = gr.Slider(1.0, 5.0, value=2.5, step=0.5, label="Guidance (hareket prompta ne kadar sadık kalsın)")
         seq_len = gr.Slider(40, 196, value=120, step=4, label="Length (frames)")
+        steps = gr.Slider(20, 100, value=50, step=5, label="Adım sayısı (az = hızlı, çok = kaliteli)")
     gr.Examples(
         ["a person walks forward", "a person walks in a circle", "a person runs",
          "a person jumps", "a person sits down", "a person waves","a person kicks something",
@@ -61,7 +63,7 @@ with gr.Blocks(title="Text to 3D Human Motion", css=CSS) as demo:
     gr.HTML(IFRAME)                         # gomulu three.js viewer
 
     btn.click(None, None, None, js=LOAD_JS) \
-       .then(run, [prompt, guidance, seq_len], out) \
+       .then(run, [prompt, guidance, seq_len, steps], out) \
        .then(None, out, None, js=PUSH_JS)
 
 
